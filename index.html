@@ -55,7 +55,8 @@
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
       transition: transform 0.2s ease;
       cursor: pointer;
-      touch-action: none;
+      touch-action: pan-x pan-y;
+      will-change: transform;
     }
 
     .page1-breath {
@@ -111,11 +112,10 @@
     const wrapper = document.getElementById('swiperWrapper');
     const container = document.getElementById('swiperContainer');
 
-    for (let i = 1; i <= 16; i++) {
+    for (let i = 1; i <= 45; i++) {
       const slide = document.createElement('div');
       slide.className = 'swiper-slide';
 
-      // no animation class initially
       const isPage1 = i === 1;
       const imgClass = isPage1 ? 'page1-img' : '';
 
@@ -159,80 +159,90 @@
             this.slideTo(0, 0, false);
             container.style.visibility = 'visible';
             container.classList.add('swiper-loaded');
-
-            // 🔥 Add animation class after visible to trigger CSS animation
             setTimeout(() => {
               const page1 = document.querySelector('.page1-img');
               if (page1) {
                 page1.classList.add('page1-breath');
               }
-            }, 100); // small delay to ensure DOM is painted
+            }, 100);
           }
         }
       });
     });
 
-    // --- Zoom Logic ---
-    let scale = 1;
+    // --- Double-tap Zoom & Pan ---
+    let tapTimeout = null;
+    let isZoomed = false;
     let activeImage = null;
+    let startX = 0, startY = 0;
+    let lastX = 0, lastY = 0;
 
-    function resetZoom() {
-      if (activeImage) {
-        activeImage.style.transform = 'scale(1)';
-        scale = 1;
-      }
-    }
-
-    document.addEventListener('wheel', function (e) {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        activeImage = document.querySelector('.swiper-slide-active img');
-        scale += e.deltaY * -0.002;
-        scale = Math.min(Math.max(1, scale), 3);
-        activeImage.style.transform = `scale(${scale})`;
-      }
-    }, { passive: false });
-
-    document.addEventListener('dblclick', () => resetZoom());
-
-    // --- Pinch Zoom Logic ---
-    let initialDistance = null;
-    let touchZoomImage = null;
-
-    function getDistance(touches) {
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
+    function resetTransform(img) {
+      img.style.transition = 'transform 0.3s ease';
+      img.style.transform = 'scale(1) translate(0px, 0px)';
+      isZoomed = false;
+      lastX = 0;
+      lastY = 0;
+      setTimeout(() => {
+        img.style.transition = '';
+      }, 300);
     }
 
     document.addEventListener('touchstart', function (e) {
-      if (e.touches.length === 2) {
-        initialDistance = getDistance(e.touches);
-        touchZoomImage = document.querySelector('.swiper-slide-active img');
-      } else if (e.touches.length === 1) {
-        const now = new Date().getTime();
-        if (this.lastTap && (now - this.lastTap) < 300) {
-          resetZoom();
+      const img = document.querySelector('.swiper-slide-active img');
+
+      if (e.touches.length === 1) {
+        // Double tap detection
+        if (tapTimeout !== null) {
+          clearTimeout(tapTimeout);
+          tapTimeout = null;
+
+          if (!isZoomed) {
+            img.style.transform = 'scale(2)';
+            isZoomed = true;
+            activeImage = img;
+          } else {
+            resetTransform(img);
+          }
+        } else {
+          tapTimeout = setTimeout(() => {
+            clearTimeout(tapTimeout);
+            tapTimeout = null;
+          }, 300);
         }
-        this.lastTap = now;
+
+        if (isZoomed) {
+          startX = e.touches[0].clientX - lastX;
+          startY = e.touches[0].clientY - lastY;
+        }
       }
     });
 
     document.addEventListener('touchmove', function (e) {
-      if (e.touches.length === 2 && initialDistance && touchZoomImage) {
-        const currentDistance = getDistance(e.touches);
-        const delta = (currentDistance - initialDistance) * 0.005;
-        scale += delta;
-        scale = Math.min(Math.max(1, scale), 3);
-        touchZoomImage.style.transform = `scale(${scale})`;
-        initialDistance = currentDistance;
-        e.preventDefault();
+      if (isZoomed && e.touches.length === 1 && activeImage) {
+        const moveX = e.touches[0].clientX - startX;
+        const moveY = e.touches[0].clientY - startY;
+        lastX = moveX;
+        lastY = moveY;
+        activeImage.style.transform = `scale(2) translate(${moveX}px, ${moveY}px)`;
       }
-    }, { passive: false });
+    });
 
-    document.addEventListener('touchend', () => {
-      initialDistance = null;
-      touchZoomImage = null;
+    document.addEventListener('touchend', function (e) {
+      if (!e.touches.length && activeImage && !isZoomed) {
+        resetTransform(activeImage);
+      }
+    });
+
+    document.addEventListener('dblclick', function () {
+      const img = document.querySelector('.swiper-slide-active img');
+      if (!isZoomed) {
+        img.style.transform = 'scale(2)';
+        isZoomed = true;
+        activeImage = img;
+      } else {
+        resetTransform(img);
+      }
     });
 
     window.addEventListener('orientationchange', () => {
