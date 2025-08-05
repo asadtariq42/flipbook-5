@@ -43,7 +43,6 @@
       justify-content: center;
       width: 100%;
       height: 100%;
-      overflow: hidden;
     }
 
     .slide-inner img {
@@ -55,9 +54,8 @@
       border-radius: 12px;
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
       transition: transform 0.2s ease;
-      cursor: grab;
+      cursor: pointer;
       touch-action: none;
-      will-change: transform;
     }
 
     .page1-breath {
@@ -112,12 +110,15 @@
   <script>
     const wrapper = document.getElementById('swiperWrapper');
     const container = document.getElementById('swiperContainer');
-    const totalPages = 45;
 
-    for (let i = 1; i <= totalPages; i++) {
+    for (let i = 1; i <= 16; i++) {
       const slide = document.createElement('div');
       slide.className = 'swiper-slide';
-      const imgClass = i === 1 ? 'page1-img' : '';
+
+      // no animation class initially
+      const isPage1 = i === 1;
+      const imgClass = isPage1 ? 'page1-img' : '';
+
       slide.innerHTML = `
         <div class="slide-inner">
           <img src="pages/page${i}.jpg" data-index="${i}" class="${imgClass}" />
@@ -127,7 +128,6 @@
     }
 
     let swiper;
-    let prevImg = null;
 
     window.addEventListener('load', () => {
       swiper = new Swiper('.swiper', {
@@ -159,88 +159,45 @@
             this.slideTo(0, 0, false);
             container.style.visibility = 'visible';
             container.classList.add('swiper-loaded');
+
+            // 🔥 Add animation class after visible to trigger CSS animation
             setTimeout(() => {
               const page1 = document.querySelector('.page1-img');
-              if (page1) page1.classList.add('page1-breath');
-            }, 100);
-          },
-          slideChangeTransitionStart: function () {
-            if (prevImg) {
-              prevImg.style.transform = '';
-            }
-            prevImg = document.querySelector('.swiper-slide-active img');
-            resetZoomPan(); // Reset current image zoom vars too
+              if (page1) {
+                page1.classList.add('page1-breath');
+              }
+            }, 100); // small delay to ensure DOM is painted
           }
         }
       });
     });
 
-    // ---- Zoom & Pan logic ----
-    let scale = 1, panX = 0, panY = 0;
-    let startX = 0, startY = 0;
-    let isDragging = false, activeImg = null;
+    // --- Zoom Logic ---
+    let scale = 1;
+    let activeImage = null;
 
-    function resetZoomPan() {
-      scale = 1;
-      panX = 0;
-      panY = 0;
-      if (activeImg) {
-        activeImg.style.transform = '';
+    function resetZoom() {
+      if (activeImage) {
+        activeImage.style.transform = 'scale(1)';
+        scale = 1;
       }
     }
 
-    function applyTransform() {
-      if (!activeImg) return;
-      if (scale === 1) {
-        panX = 0;
-        panY = 0;
-      }
-      activeImg.style.transform = `scale(${scale}) translate(${panX}px, ${panY}px)`;
-    }
-
-    // Ctrl + wheel zoom
-    document.addEventListener('wheel', (e) => {
+    document.addEventListener('wheel', function (e) {
       if (e.ctrlKey) {
         e.preventDefault();
-        activeImg = document.querySelector('.swiper-slide-active img');
+        activeImage = document.querySelector('.swiper-slide-active img');
         scale += e.deltaY * -0.002;
-        scale = Math.max(1, Math.min(3, scale));
-        applyTransform();
+        scale = Math.min(Math.max(1, scale), 3);
+        activeImage.style.transform = `scale(${scale})`;
       }
     }, { passive: false });
 
-    // Double-click to zoom toggle
-    document.addEventListener('dblclick', () => {
-      activeImg = document.querySelector('.swiper-slide-active img');
-      if (!activeImg) return;
-      scale = (scale === 1) ? 2 : 1;
-      applyTransform();
-    });
+    document.addEventListener('dblclick', () => resetZoom());
 
-    // Mouse pan
-    document.addEventListener('mousedown', (e) => {
-      activeImg = document.querySelector('.swiper-slide-active img');
-      if (!activeImg || scale === 1) return;
-      isDragging = true;
-      startX = e.clientX - panX;
-      startY = e.clientY - panY;
-    });
-
-    document.addEventListener('mousemove', (e) => {
-      if (!isDragging || !activeImg) return;
-      panX = e.clientX - startX;
-      panY = e.clientY - startY;
-      applyTransform();
-    });
-
-    document.addEventListener('mouseup', () => {
-      isDragging = false;
-    });
-
-    // Touch pinch & pan & double-tap
+    // --- Pinch Zoom Logic ---
     let initialDistance = null;
-    let lastTouchX = 0, lastTouchY = 0;
-    let lastTap = 0;
+    let touchZoomImage = null;
 
     function getDistance(touches) {
       const dx = touches[0].clientX - touches[1].clientX;
@@ -248,51 +205,34 @@
       return Math.sqrt(dx * dx + dy * dy);
     }
 
-    document.addEventListener('touchstart', (e) => {
-      activeImg = document.querySelector('.swiper-slide-active img');
-      if (!activeImg) return;
-
+    document.addEventListener('touchstart', function (e) {
       if (e.touches.length === 2) {
         initialDistance = getDistance(e.touches);
+        touchZoomImage = document.querySelector('.swiper-slide-active img');
       } else if (e.touches.length === 1) {
-        lastTouchX = e.touches[0].clientX;
-        lastTouchY = e.touches[0].clientY;
-
-        const now = Date.now();
-        if (now - lastTap < 300) {
-          scale = (scale === 1) ? 2 : 1;
-          applyTransform();
-          e.preventDefault();
+        const now = new Date().getTime();
+        if (this.lastTap && (now - this.lastTap) < 300) {
+          resetZoom();
         }
-        lastTap = now;
+        this.lastTap = now;
       }
     });
 
-    document.addEventListener('touchmove', (e) => {
-      if (!activeImg) return;
-
-      if (e.touches.length === 2 && initialDistance) {
-        const newDist = getDistance(e.touches);
-        const delta = (newDist - initialDistance) * 0.005;
+    document.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 2 && initialDistance && touchZoomImage) {
+        const currentDistance = getDistance(e.touches);
+        const delta = (currentDistance - initialDistance) * 0.005;
         scale += delta;
-        scale = Math.max(1, Math.min(3, scale));
-        initialDistance = newDist;
-        applyTransform();
-        e.preventDefault();
-      } else if (e.touches.length === 1 && scale > 1) {
-        const deltaX = e.touches[0].clientX - lastTouchX;
-        const deltaY = e.touches[0].clientY - lastTouchY;
-        panX += deltaX;
-        panY += deltaY;
-        lastTouchX = e.touches[0].clientX;
-        lastTouchY = e.touches[0].clientY;
-        applyTransform();
+        scale = Math.min(Math.max(1, scale), 3);
+        touchZoomImage.style.transform = `scale(${scale})`;
+        initialDistance = currentDistance;
         e.preventDefault();
       }
     }, { passive: false });
 
     document.addEventListener('touchend', () => {
       initialDistance = null;
+      touchZoomImage = null;
     });
 
     window.addEventListener('orientationchange', () => {
