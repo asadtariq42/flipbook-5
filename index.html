@@ -130,6 +130,10 @@
           nextEl: '.swiper-button-next',
           prevEl: '.swiper-button-prev',
         },
+        keyboard: {
+          enabled: true,
+          onlyInViewport: true,
+        },
         loop: false,
         on: {
           init: function () {
@@ -158,7 +162,7 @@
       applyTransform();
     }, { passive: false });
 
-    // Desktop Pan (only while button is held down)
+    // Desktop Pan
     document.addEventListener('mousedown', (e) => {
       if (window.innerWidth <= 768 || scale <= 1) return;
       if (e.button !== 0) return;
@@ -202,7 +206,7 @@
       applyTransform();
     });
 
-    // Mobile Double Tap and Pinch Zoom
+    // Mobile Zoom & Pan
     document.addEventListener('touchstart', (e) => {
       if (window.innerWidth > 768) return;
       activeImg = getActiveImage();
