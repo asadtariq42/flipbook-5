@@ -48,7 +48,7 @@
       object-fit: contain;
       border-radius: 12px;
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-      transition: transform 0.3s ease; /* Smooth zoom effect */
+      transition: transform 0.3s ease;
       touch-action: none;
       cursor: grab;
     }
@@ -63,12 +63,6 @@
     .swiper-button-next::after,
     .swiper-button-prev::after {
       font-size: 22px;
-    }
-    @media (max-width: 768px) {
-      .slide-inner img {
-        max-height: 80vh;
-        max-width: 95vw;
-      }
     }
   </style>
 </head>
@@ -89,13 +83,19 @@
       wrapper.appendChild(slide);
     }
 
-    let swiper, scale = 1, panX = 0, panY = 0, isPanning = false, isDragging = false, startX = 0, startY = 0;
+    let swiper, scale = 1, panX = 0, panY = 0, isPanning = false, startX = 0, startY = 0;
     let activeImg = null;
+    let isDragging = false;
+    let lastTap = 0;
+    let lastDistance = 0;
 
     function resetZoom() {
-      scale = 1; panX = 0; panY = 0;
+      scale = 1;
+      panX = 0;
+      panY = 0;
       if (activeImg) {
         activeImg.style.transform = 'scale(1) translate(0px, 0px)';
+        activeImg.style.cursor = 'grab';
       }
       swiper.allowTouchMove = true;
     }
@@ -145,6 +145,7 @@
       });
     });
 
+    // Desktop Zoom
     document.addEventListener('wheel', (e) => {
       if (window.innerWidth <= 768) return;
       activeImg = getActiveImage();
@@ -153,12 +154,14 @@
       const delta = -e.deltaY;
       const zoomFactor = delta > 0 ? 1.05 : 0.95;
       scale = Math.min(Math.max(scale * zoomFactor, 1), 4);
-      swiper.allowTouchMove = (scale === 1);
+      swiper.allowTouchMove = scale === 1;
       applyTransform();
     }, { passive: false });
 
+    // Desktop Pan (only while button is held down)
     document.addEventListener('mousedown', (e) => {
       if (window.innerWidth <= 768 || scale <= 1) return;
+      if (e.button !== 0) return;
       activeImg = getActiveImage();
       if (!activeImg) return;
       isPanning = true;
@@ -168,15 +171,22 @@
     });
 
     document.addEventListener('mousemove', (e) => {
-      if (!isPanning || scale === 1 || window.innerWidth <= 768) return;
+      if (!isPanning || window.innerWidth <= 768 || scale <= 1) return;
       panX = e.clientX - startX;
       panY = e.clientY - startY;
       applyTransform();
     });
 
     document.addEventListener('mouseup', () => {
-      if (activeImg) activeImg.style.cursor = 'grab';
+      if (window.innerWidth <= 768 || !activeImg) return;
       isPanning = false;
+      activeImg.style.cursor = scale > 1 ? 'grab' : 'default';
+    });
+
+    document.addEventListener('mouseleave', () => {
+      if (window.innerWidth <= 768 || !activeImg) return;
+      isPanning = false;
+      activeImg.style.cursor = scale > 1 ? 'grab' : 'default';
     });
 
     document.addEventListener('dblclick', () => {
@@ -192,39 +202,55 @@
       applyTransform();
     });
 
-    let lastTap = 0;
-    document.addEventListener('touchstart', function (e) {
+    // Mobile Double Tap and Pinch Zoom
+    document.addEventListener('touchstart', (e) => {
       if (window.innerWidth > 768) return;
-      const currentTime = new Date().getTime();
-      const tapLength = currentTime - lastTap;
       activeImg = getActiveImage();
       if (!activeImg) return;
-      if (tapLength < 300 && tapLength > 0) {
-        if (scale === 1) {
-          scale = 2;
-          swiper.allowTouchMove = false;
-        } else {
-          resetZoom();
-        }
-        applyTransform();
-        e.preventDefault();
-      }
-      lastTap = currentTime;
+
       if (e.touches.length === 1) {
+        const now = new Date().getTime();
+        if (now - lastTap < 300) {
+          if (scale === 1) {
+            scale = 2;
+            swiper.allowTouchMove = false;
+          } else {
+            resetZoom();
+          }
+          applyTransform();
+          e.preventDefault();
+        }
+        lastTap = now;
         startX = e.touches[0].clientX - panX;
         startY = e.touches[0].clientY - panY;
         isDragging = true;
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        lastDistance = Math.sqrt(dx * dx + dy * dy);
       }
     });
 
-    document.addEventListener('touchmove', function (e) {
-      if (!isDragging || scale === 1 || window.innerWidth > 768) return;
-      panX = e.touches[0].clientX - startX;
-      panY = e.touches[0].clientY - startY;
-      applyTransform();
+    document.addEventListener('touchmove', (e) => {
+      if (!activeImg || window.innerWidth > 768) return;
+
+      if (e.touches.length === 1 && isDragging && scale > 1) {
+        panX = e.touches[0].clientX - startX;
+        panY = e.touches[0].clientY - startY;
+        applyTransform();
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[1].clientX - e.touches[0].clientX;
+        const dy = e.touches[1].clientY - e.touches[0].clientY;
+        const newDistance = Math.sqrt(dx * dx + dy * dy);
+        const zoomFactor = newDistance / lastDistance;
+        scale = Math.min(Math.max(scale * zoomFactor, 1), 4);
+        swiper.allowTouchMove = scale === 1;
+        lastDistance = newDistance;
+        applyTransform();
+      }
     }, { passive: false });
 
-    document.addEventListener('touchend', function () {
+    document.addEventListener('touchend', () => {
       isDragging = false;
     });
 
